@@ -6,8 +6,9 @@ import json
 import base64
 from PIL import Image
 import re
+import fitz  # PyMuPDF
 
-# Configuration Streamlit
+# Configuration
 st.set_page_config(page_title="Lecture Quantités Reçues", layout="wide", page_icon="✅")
 
 st.markdown("""
@@ -19,85 +20,127 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Clé API
+# Clé API
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 if not OPENAI_API_KEY:
     st.warning("⚠️ Aucune clé API détectée. Veuillez l’ajouter dans Settings > Secrets.")
     st.stop()
 openai.api_key = OPENAI_API_KEY
 
-# --- Prompt
+# Prompt principal
 prompt = (
-    "Voici une photo contenant des calculs manuels liés à des stocks (palettes, cartons, etc.). Je veux que tu :\n"
-    "1. Interprètes les calculs ligne par ligne, même si l’écriture est partielle ou approximative.\n"
-    "2. Identifies la structure logique : par exemple si les nombres représentent des palettes, cartons, paquets, ou pièces.\n"
-    "3. Rassembles toutes les données selon les couleurs ou catégories (par exemple : blanc, bleu, rouge, etc.).\n"
-    "4. Crées un tableau synthétique clair (avec colonnes comme : Couleur, Palettes, Cartons, Pièces, Total pièces).\n"
-    "5. Génères un fichier Excel avec ces données pour que je puisse les exploiter facilement.\n"
-    "Si des calculs semblent ambigus, précise les hypothèses que tu prends.\n"
-    "Réponds UNIQUEMENT par un tableau JSON array de la forme :\n"
-    "[{\"Couleur\": \"Bleu\", \"Palettes\": 2, \"Cartons\": 10, \"Pièces\": 80, \"Total pièces\": 800}]\n"
-    "N’ajoute aucun texte autour, ne mets rien avant/après le JSON."
+    "Voici un document contenant des calculs de quantités ou de stock (palettes, cartons, pièces, etc.). "
+    "Je veux que tu :\n"
+    "1. Comprennes ligne par ligne les valeurs, même si partiellement écrites\n"
+    "2. Regroupes les informations logiquement par couleur ou catégorie\n"
+    "3. Crées un tableau JSON clair avec : Couleur, Palettes, Cartons, Pièces, Total pièces\n"
+    "4. Ne retournes que ce tableau JSON. Aucun texte autour. Pas de code Markdown.\n"
+    "5. Si tu ne comprends pas, ne réponds pas ou explique l’ambiguïté en interne.\n"
+    "Exemple de réponse :\n"
+    "[{\"Couleur\": \"Bleu\", \"Palettes\": 2, \"Cartons\": 10, \"Pièces\": 80, \"Total pièces\": 800}]"
 )
 
-def extract_json_with_gpt4o(img: Image.Image, prompt: str) -> str:
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode()
-    response = openai.chat.completions.create(
-        model="gpt-4o",
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
-            ]
-        }],
-        max_tokens=1400,
-        temperature=0
-    )
-    return response.choices[0].message.content
-
 def extract_json_block(s: str) -> str:
-    json_regex = re.compile(r'(\[.*?\]|\{.*?\})', re.DOTALL)
+    json_regex = re.compile(r'(\[.*?\])', re.DOTALL)
     matches = json_regex.findall(s)
     if not matches:
-        raise ValueError("Aucun JSON trouvé dans la sortie du modèle.")
+        raise ValueError("❌ Aucun bloc JSON valide trouvé.")
     return max(matches, key=len)
 
-# --- Interface
-st.markdown('<div class="card"><div class="section-title">1. Importez la photo (jpeg/png) de votre feuille de calculs</div></div>', unsafe_allow_html=True)
-uploaded = st.file_uploader("Sélectionnez une photo de la feuille de calculs", type=["png", "jpg", "jpeg"])
+def call_gpt_with_image(image_data: bytes, prompt: str) -> str:
+    b64 = base64.b64encode(image_data).decode()
+    for attempt in range(3):
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o",
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+                    ]
+                }],
+                max_tokens=1400,
+                temperature=0
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            if attempt == 2:
+                raise e
+
+def process_pdf(file: bytes) -> list:
+    pages_images = []
+    doc = fitz.open(stream=file, filetype="pdf")
+    for page in doc:
+        pix = page.get_pixmap(dpi=200)
+        img_bytes = pix.tobytes("png")
+        pages_images.append(img_bytes)
+    return pages_images
+
+def process_excel(file: bytes) -> pd.DataFrame:
+    xls = pd.ExcelFile(io.BytesIO(file))
+    df_all = pd.concat([xls.parse(sheet) for sheet in xls.sheet_names], ignore_index=True)
+    return df_all
+
+# Interface
+st.markdown('<div class="card"><div class="section-title">1. Importez un fichier : Image, PDF ou Excel</div></div>', unsafe_allow_html=True)
+uploaded = st.file_uploader("Téléverser un fichier", type=["png", "jpg", "jpeg", "pdf", "xlsx"])
 if not uploaded:
-    st.info("🖼️ Veuillez importer une image pour commencer l’analyse.")
+    st.info("📂 Veuillez téléverser un fichier pour continuer.")
     st.stop()
 
+# Traitement
 file_bytes = uploaded.getvalue()
-try:
-    img = Image.open(io.BytesIO(file_bytes))
-except Exception as e:
-    st.error(f"Erreur lors du chargement de l'image : {e}")
-    st.stop()
+file_name = uploaded.name.lower()
 
-st.markdown('<div class="card"><div class="section-title">2. Aperçu de la photo</div></div>', unsafe_allow_html=True)
-st.image(img, use_container_width=True)
+# === PDF ou Image ===
+if file_name.endswith(("pdf", "png", "jpg", "jpeg")):
+    st.markdown('<div class="card"><div class="section-title">2. Analyse en cours (GPT-4o)</div>', unsafe_allow_html=True)
+    all_json = []
+    pages = []
 
-st.markdown('<div class="card"><div class="section-title">3. Extraction du tableau</div>', unsafe_allow_html=True)
-with st.spinner("🔍 Analyse de la feuille en cours..."):
-    try:
-        output = extract_json_with_gpt4o(img, prompt)
-        st.write("🧠 Réponse brute GPT-4o :", output)
-        output_clean = extract_json_block(output)
-        lignes = json.loads(output_clean)
-    except Exception as e:
-        st.error("❌ Erreur lors de l’extraction ou du parsing JSON.")
-        st.exception(e)
+    if file_name.endswith("pdf"):
+        try:
+            pages = process_pdf(file_bytes)
+        except Exception as e:
+            st.error(f"Erreur traitement PDF : {e}")
+            st.stop()
+    else:
+        img = Image.open(io.BytesIO(file_bytes))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        pages = [buf.getvalue()]
+
+    with st.spinner("🔍 Lecture du document en cours..."):
+        for idx, page in enumerate(pages):
+            st.write(f"📄 Page {idx+1}")
+            try:
+                raw_response = call_gpt_with_image(page, prompt)
+                st.write("🧠 Réponse GPT-4o :", raw_response)
+                json_str = extract_json_block(raw_response)
+                data = json.loads(json_str)
+                all_json.extend(data)
+            except Exception as e:
+                st.warning(f"⚠️ Erreur page {idx+1} : {e}")
+
+    if not all_json:
+        st.error("❌ Aucune donnée exploitable extraite.")
         st.stop()
-st.markdown('</div>', unsafe_allow_html=True)
 
-# --- Résultats
-df = pd.DataFrame(lignes)
-st.markdown('<div class="card"><div class="section-title">4. Résultat et téléchargement Excel</div>', unsafe_allow_html=True)
+    df = pd.DataFrame(all_json)
+
+# === Excel ===
+elif file_name.endswith("xlsx"):
+    st.markdown('<div class="card"><div class="section-title">2. Lecture Excel</div>', unsafe_allow_html=True)
+    try:
+        df = process_excel(file_bytes)
+        st.success("✅ Fichier Excel chargé avec succès.")
+    except Exception as e:
+        st.error(f"Erreur lecture Excel : {e}")
+        st.stop()
+
+# === Affichage résultat ===
+st.markdown('<div class="card"><div class="section-title">3. Résultat et téléchargement Excel</div>', unsafe_allow_html=True)
 st.dataframe(df, use_container_width=True)
 
 out = io.BytesIO()
@@ -106,7 +149,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 out.seek(0)
 
 st.download_button(
-    "📥 Télécharger le fichier Excel",
+    "📥 Télécharger les données au format Excel",
     data=out,
     file_name="quantites_recues.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
