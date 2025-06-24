@@ -22,7 +22,7 @@ st.markdown("""
 # --- Clé API
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 if not OPENAI_API_KEY:
-    st.error("🛑 Ajoutez OPENAI_API_KEY dans les secrets Streamlit.")
+    st.warning("⚠️ Aucune clé API détectée. Veuillez l’ajouter dans Settings > Secrets.")
     st.stop()
 openai.api_key = OPENAI_API_KEY
 
@@ -69,26 +69,33 @@ def extract_json_block(s: str) -> str:
 st.markdown('<div class="card"><div class="section-title">1. Importez la photo (jpeg/png) de votre feuille de calculs</div></div>', unsafe_allow_html=True)
 uploaded = st.file_uploader("Sélectionnez une photo de la feuille de calculs", type=["png", "jpg", "jpeg"])
 if not uploaded:
+    st.info("🖼️ Veuillez importer une image pour commencer l’analyse.")
     st.stop()
 
 file_bytes = uploaded.getvalue()
-img = Image.open(io.BytesIO(file_bytes))
+try:
+    img = Image.open(io.BytesIO(file_bytes))
+except Exception as e:
+    st.error(f"Erreur lors du chargement de l'image : {e}")
+    st.stop()
 
 st.markdown('<div class="card"><div class="section-title">2. Aperçu de la photo</div></div>', unsafe_allow_html=True)
 st.image(img, use_container_width=True)
 
 st.markdown('<div class="card"><div class="section-title">3. Extraction du tableau</div>', unsafe_allow_html=True)
-with st.spinner("Analyse de la feuille en cours..."):
+with st.spinner("🔍 Analyse de la feuille en cours..."):
     try:
         output = extract_json_with_gpt4o(img, prompt)
-        st.code(output, language="json")
+        st.write("🧠 Réponse brute GPT-4o :", output)
         output_clean = extract_json_block(output)
         lignes = json.loads(output_clean)
     except Exception as e:
-        st.error(f"Erreur extraction ou parsing JSON : {e}")
+        st.error("❌ Erreur lors de l’extraction ou du parsing JSON.")
+        st.exception(e)
         st.stop()
 st.markdown('</div>', unsafe_allow_html=True)
 
+# --- Résultats
 df = pd.DataFrame(lignes)
 st.markdown('<div class="card"><div class="section-title">4. Résultat et téléchargement Excel</div>', unsafe_allow_html=True)
 st.dataframe(df, use_container_width=True)
@@ -97,8 +104,9 @@ out = io.BytesIO()
 with pd.ExcelWriter(out, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="QUANTITES_RECUES")
 out.seek(0)
+
 st.download_button(
-    "Télécharger le fichier Excel",
+    "📥 Télécharger le fichier Excel",
     data=out,
     file_name="quantites_recues.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
