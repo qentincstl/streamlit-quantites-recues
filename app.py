@@ -28,26 +28,19 @@ if not OPENAI_API_KEY:
 openai.api_key = OPENAI_API_KEY
 
 # Prompt principal
-prompt =""" Tu vas recevoir une ou plusieurs images de bon de livraison annoté à la main par l'usine.
-
-Tu dois ANALYSER directement le contenu de chaque image et en déduire un tableau JSON corrigé.
-
----
-
-🎯 Pour chaque ligne produit visible dans l’image :
-
-1. Lis :
-   - La **référence produit**
-   - Le **nom du produit**
-   - La **quantité réellement constatée** (attention : si une valeur est rayée, prends celle qui est **écrite à côté ou au-dessus**)
-2. Si une quantité est modifiée à la main (et l’ancienne rayée), considère que c’est une **correction manuelle**
-3. Si aucune correction n’est faite, marque la ligne comme **OK**
+prompt = """
+Tu vas recevoir une image contenant un bon de livraison annoté manuellement.
+Tu dois analyser VISUELLEMENT cette image pour en extraire les données réelles.
 
 ---
+Pour chaque ligne produit visible dans l’image :
+1. Lis la référence produit et le nom du produit
+2. Lis la quantité corrigée (ignore les valeurs rayées, prends la valeur non rayée ou manuscrite)
+3. Si la quantité est différente de la version imprimée, indique "Corrigée manuellement" dans le champ Commentaire
+4. Ignore toute ligne entièrement barrée
+5. Si aucune modification n’est visible, indique "OK"
 
-🧾 Forme attendue : UN TABLEAU JSON"""
-
-```json
+Retourne uniquement un tableau JSON propre comme ceci :
 [
   {
     "Référence produit / 产品参考": "REF123",
@@ -63,21 +56,7 @@ Tu dois ANALYSER directement le contenu de chaque image et en déduire un tablea
   }
 ]
 
-```json
-[
-  {
-    "Référence produit / 产品参考": "1V1073DM",
-    "Nom produit": "MESO MASK 50ML POT SPE",
-    "Quantité corrigée": "837",
-    "Commentaire": "OK"
-  },
-  {
-    "Référence produit / 产品参考": "1V1073DM",
-    "Nom produit": "MESO MASK 50ML POT SPE",
-    "Quantité corrigée": "30",
-    "Commentaire": "Corrigée manuellement"
-  }
-]
+Rends uniquement ce JSON.
 """
 
 def extract_json_block(s: str) -> str:
@@ -129,7 +108,6 @@ if not uploaded:
     st.info("📂 Veuillez téléverser un fichier pour continuer.")
     st.stop()
 
-# Traitement
 file_bytes = uploaded.getvalue()
 file_name = uploaded.name.lower()
 
@@ -137,26 +115,14 @@ file_name = uploaded.name.lower()
 if file_name.endswith(("pdf", "png", "jpg", "jpeg")):
     st.markdown('<div class="card"><div class="section-title">2. Analyse en cours (GPT-4o)</div>', unsafe_allow_html=True)
     all_json = []
-    pages = []
-
-    if file_name.endswith("pdf"):
-        try:
-            pages = process_pdf(file_bytes)
-        except Exception as e:
-            st.error(f"Erreur traitement PDF : {e}")
-            st.stop()
-    else:
-        img = Image.open(io.BytesIO(file_bytes))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        pages = [buf.getvalue()]
+    pages = process_pdf(file_bytes) if file_name.endswith("pdf") else [Image.open(io.BytesIO(file_bytes)).convert("RGB").tobytes()]
 
     with st.spinner("🔍 Lecture du document en cours..."):
         for idx, page in enumerate(pages):
             st.write(f"📄 Page {idx+1}")
             try:
                 raw_response = call_gpt_with_image(page, prompt)
-                st.write("🧠 Réponse GPT-4o :", raw_response)
+                st.write("🧬 Réponse GPT-4o :", raw_response)
                 json_str = extract_json_block(raw_response)
                 data = json.loads(json_str)
                 all_json.extend(data)
@@ -189,7 +155,7 @@ with pd.ExcelWriter(out, engine="openpyxl") as writer:
 out.seek(0)
 
 st.download_button(
-    "📥 Télécharger les données au format Excel",
+    "📅 Télécharger les données au format Excel",
     data=out,
     file_name="quantites_recues.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
