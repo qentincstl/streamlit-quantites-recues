@@ -40,6 +40,8 @@ Pour chaque ligne produit visible dans l’image :
 4. Ignore toute ligne entièrement barrée
 5. Si aucune modification n’est visible, indique "OK"
 
+Tu dois traiter toutes les pages du document. Répète l'opération pour chaque page, jusqu'à ce que toutes les lignes soient bien extraites et que le total soit cohérent.
+
 Retourne uniquement un tableau JSON propre comme ceci :
 [
   {
@@ -77,20 +79,25 @@ def extract_image_from_pdf(file: bytes) -> list:
 
 def ask_gpt4o_with_image(image_bytes: bytes) -> list:
     b64 = base64.b64encode(image_bytes).decode()
-    response = openai.chat.completions.create(
-        model="gpt-4o",
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
-            ]
-        }],
-        max_tokens=1500,
-        temperature=0
-    )
-    content = response.choices[0].message.content
-    return json.loads(extract_json_block(content))
+    for attempt in range(3):
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o",
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+                    ]
+                }],
+                max_tokens=1500,
+                temperature=0
+            )
+            content = response.choices[0].message.content
+            return json.loads(extract_json_block(content))
+        except Exception as e:
+            if attempt == 2:
+                raise e
 
 # Interface
 st.markdown('<div class="card"><div class="section-title">1. Importez une image ou un PDF annoté</div></div>', unsafe_allow_html=True)
@@ -135,4 +142,4 @@ if results:
     output.seek(0)
 
     st.download_button(
-        
+        "
