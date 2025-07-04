@@ -35,9 +35,12 @@ Tu dois analyser VISUELLEMENT cette image pour en extraire les données réelles
 
 Pour chaque ligne produit visible dans l’image :
 1. Lis la référence produit et le nom du produit
-2. Lis la quantité corrigée (ignore les valeurs rayées, prends la valeur non rayée ou manuscrite)
-3. Si la quantité est différente de la version imprimée, indique "Corrigée manuellement" dans le champ Commentaire
-4. Ignore toute ligne entièrement barrée
+2. Lis la quantité corrigée :
+   - Si une valeur est rayée, ce n’est plus la bonne
+   - Prends uniquement la valeur **non rayée ou manuscrite à la place**
+   - Ne supprime jamais la ligne : remplace uniquement la quantité par la version corrigée visible
+3. Si une quantité a été modifiée à la main, indique "Corrigée manuellement" dans le champ Commentaire
+4. Ignore uniquement les lignes entièrement barrées
 5. Si aucune modification n’est visible, indique "OK"
 
 Tu dois traiter toutes les pages du document. Répète l'opération pour chaque page, jusqu'à ce que toutes les lignes soient bien extraites et que le total soit cohérent.
@@ -60,6 +63,9 @@ Retourne uniquement un tableau JSON propre comme ceci :
 
 Ne rends rien d’autre que ce JSON.
 """
+
+# Le reste du code reste inchangé
+
 
 def extract_json_block(s: str) -> str:
     json_regex = re.compile(r'(\[.*?\])', re.DOTALL)
