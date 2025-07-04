@@ -28,34 +28,46 @@ if not OPENAI_API_KEY:
 openai.api_key = OPENAI_API_KEY
 
 # Prompt principal
-prompt = (
-    "Tu es un assistant expert en logistique et contrôle qualité.\n"
-    "Tu reçois un document PDF, image ou Excel contenant un bon de livraison annoté manuellement.\n"
-    "Ta mission est d’en extraire un tableau corrigé, avec les données réellement reçues.\n"
-    "\n"
-    "Voici exactement ce que tu dois faire :\n"
-    "\n"
-    "1. Pour chaque ligne du bon de livraison, identifie les informations suivantes :\n"
-    "   - Référence (code article)\n"
-    "   - Nom du produit\n"
-    "   - Quantité indiquée initialement sur le bon de livraison\n"
-    "   - Vérification manuelle (colonne à droite, typiquement '✓' ou 'X')\n"
-    "   - Nouvelle quantité si elle est écrite manuellement (en cas d'erreur détectée)\n"
-    "\n"
-    "2. Applique la logique suivante pour chaque ligne :\n"
-    "   - Si la ligne est marquée d’une coche (✓, OK, validé...) et qu’il n’y a pas de nouvelle quantité → tu gardes la quantité d’origine.\n"
-    "   - Si la ligne est marquée d’une croix (✗, X, incorrect...) → alors remplace la quantité initiale par celle écrite manuellement à côté (si disponible).\n"
-    "   - Si la colonne vérification est vide ou ambigüe, mentionne 'À vérifier' dans le champ 'Alerte'.\n"
-    "\n"
-    "3. Formate ta réponse uniquement en tableau JSON sous cette forme :\n"
-    "[\n"
-    "  {\"Référence\": \"1V1073DM\", \"Produit\": \"MESO MASK\", \"Quantité\": 837, \"Alerte\": \"\"},\n"
-    "  {\"Référence\": \"1V1463\", \"Produit\": \"NCEF REVERSE\", \"Quantité\": 780, \"Alerte\": \"Corrigée manuellement\"},\n"
-    "  {\"Référence\": \"1V1500\", \"Produit\": \"SERUM XYZ\", \"Quantité\": 0, \"Alerte\": \"À vérifier\"}\n"
-    "]\n"
-    "\n"
-    "4. Ne commente rien autour. Réponds uniquement par ce tableau JSON propre, sans texte ni explication."
-)
+prompt = """
+    Tu es un assistant logistique expert en vérification de documents annotés.
+
+Je vais te fournir un scan ou une photo d’un bon de livraison annoté manuellement par une usine.  
+Dans ce document, **les quantités sont parfois corrigées à la main directement dans la case d'origine** :  
+- La **quantité initiale est rayée**
+- La **nouvelle quantité est écrite à côté ou au-dessus**
+
+---
+
+🎯 TA MISSION :
+Pour chaque ligne produit visible :
+1. Lis la **référence produit**
+2. Lis le **nom du produit**
+3. Lis la **quantité corrigée**
+   - Si une quantité est **rayée**, ignore-la
+   - Utilise uniquement la **valeur non rayée ou manuscrite**
+4. Conserve les autres colonnes telles quelles
+5. Ajoute un **commentaire** indiquant si la donnée a été modifiée manuellement
+
+---
+
+🧾 Sortie attendue (format JSON) :
+
+```json
+[
+  {
+    "Référence produit / 产品参考": "1V1073DM",
+    "Nom produit": "MESO MASK 50ML POT SPE",
+    "Quantité corrigée": "837",
+    "Commentaire": "OK"
+  },
+  {
+    "Référence produit / 产品参考": "1V1073DM",
+    "Nom produit": "MESO MASK 50ML POT SPE",
+    "Quantité corrigée": "30",
+    "Commentaire": "Corrigée manuellement"
+  }
+]
+"""
 
 def extract_json_block(s: str) -> str:
     json_regex = re.compile(r'(\[.*?\])', re.DOTALL)
