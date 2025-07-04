@@ -83,7 +83,7 @@ def extract_image_from_pdf(file: bytes) -> list:
         pages.append(img_bytes)
     return pages
 
-def ask_gpt4o_with_image(image_bytes: bytes) -> list:
+defdef ask_gpt4o_with_image(image_bytes: bytes) -> list:
     b64 = base64.b64encode(image_bytes).decode()
     for attempt in range(3):
         try:
@@ -100,10 +100,21 @@ def ask_gpt4o_with_image(image_bytes: bytes) -> list:
                 temperature=0
             )
             content = response.choices[0].message.content
-            return json.loads(extract_json_block(content))
+
+            # Nouvelle vérification
+            try:
+                json_str = extract_json_block(content)
+                return json.loads(json_str)
+            except Exception:
+                st.warning(\"❌ La réponse ne contenait pas de JSON valide. Voici la sortie brute :\")
+                st.code(content)
+                return []
+
         except Exception as e:
             if attempt == 2:
                 raise e
+                raise e
+                
 
 # Interface
 st.markdown('<div class="card"><div class="section-title">1. Importez une image ou un PDF annoté</div></div>', unsafe_allow_html=True)
