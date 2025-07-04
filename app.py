@@ -28,29 +28,40 @@ if not OPENAI_API_KEY:
 openai.api_key = OPENAI_API_KEY
 
 # Prompt principal
-prompt = """
-    Tu es un assistant logistique expert en vérification de documents annotés.
+prompt =""" Tu vas recevoir une ou plusieurs images de bon de livraison annoté à la main par l'usine.
 
-Je vais te fournir un scan ou une photo d’un bon de livraison annoté manuellement par une usine.  
-Dans ce document, **les quantités sont parfois corrigées à la main directement dans la case d'origine** :  
-- La **quantité initiale est rayée**
-- La **nouvelle quantité est écrite à côté ou au-dessus**
+Tu dois ANALYSER directement le contenu de chaque image et en déduire un tableau JSON corrigé.
 
 ---
 
-🎯 TA MISSION :
-Pour chaque ligne produit visible :
-1. Lis la **référence produit**
-2. Lis le **nom du produit**
-3. Lis la **quantité corrigée**
-   - Si une quantité est **rayée**, ignore-la
-   - Utilise uniquement la **valeur non rayée ou manuscrite**
-4. Conserve les autres colonnes telles quelles
-5. Ajoute un **commentaire** indiquant si la donnée a été modifiée manuellement
+🎯 Pour chaque ligne produit visible dans l’image :
+
+1. Lis :
+   - La **référence produit**
+   - Le **nom du produit**
+   - La **quantité réellement constatée** (attention : si une valeur est rayée, prends celle qui est **écrite à côté ou au-dessus**)
+2. Si une quantité est modifiée à la main (et l’ancienne rayée), considère que c’est une **correction manuelle**
+3. Si aucune correction n’est faite, marque la ligne comme **OK**
 
 ---
 
-🧾 Sortie attendue (format JSON) :
+🧾 Forme attendue : UN TABLEAU JSON"""
+
+```json
+[
+  {
+    "Référence produit / 产品参考": "REF123",
+    "Nom produit": "DIA COLOR 7.1",
+    "Quantité corrigée": "60",
+    "Commentaire": "Corrigée manuellement"
+  },
+  {
+    "Référence produit / 产品参考": "REF456",
+    "Nom produit": "MAJIREL 5.1",
+    "Quantité corrigée": "108",
+    "Commentaire": "OK"
+  }
+]
 
 ```json
 [
