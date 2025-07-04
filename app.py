@@ -150,10 +150,10 @@ if results:
         df.to_excel(writer, index=False, sheet_name="CORRECTIONS_USINE")
     output.seek(0)
 
-   st.download_button(
-    label="📥 Télécharger le résultat Excel",
-    data=output,
-    file_name="corrections_usine.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True
-)
+    st.download_button(
+        label="📥 Télécharger le résultat Excel",
+        data=output,
+        file_name="corrections_usine.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
